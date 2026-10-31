@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Brightpearl Bundle Stock and Inventory Enhancement + TR PO Tab
 // @namespace    http://tampermonkey.net/
-// @version      11.20
+// @version      11.21
 // @description  Bundle & inventory enhancements + TR Purchase Orders tab loaded from Metabase POs only when opened, showing coloured status chips and hiding PO tab when other tabs are selected. Now includes cost price breakdown per currency on the Prices tab.
 // @author       Erin Bond
 // @match        https://euw1.brightpearlapp.com/*
@@ -23,12 +23,15 @@
     const PO_QUESTION_UUID = 'fcd1f170-b73a-4537-8f8b-105e126c938b';
 
     // COST PRICE CARD — public Metabase question using bpproductprice table
-    // ⚠️  Replace the UUID below with your actual public card UUID
     const COST_PRICE_CARD_UUID = 'ffcefd81-7e86-4189-a6ca-e6e379c90469';
     const COST_PRICE_PRODUCT_ID_TEMPLATE_TAG = 'product_id';
+    // Metabase public cards reject filters without the card's parameter id.
+    // Find it in the card's "parameters" list if the card is ever rebuilt.
+    const COST_PRICE_PARAM_ID = '1e26ce9e-b2bb-49a1-a47a-e0033d4fb169';
 
     // ─── METABASE FILTERING ────────────────────────────────────────────────────
     const PO_PRODUCT_ID_TEMPLATE_TAG = 'product_id';
+    const PO_PARAM_ID = '2c01c5b6-fcc5-46ab-8efe-8eab12a2851c';
     // ──────────────────────────────────────────────────────────────────────────
 
     const PO_ORDER_URL_TEMPLATE = 'https://euw1.brightpearlapp.com/patt-op.php?scode=invoice&oID={{ORDERID}}';
@@ -406,6 +409,12 @@
                 onload: function(response) {
                     try {
                         const data = JSON.parse(response.responseText);
+                        if (!Array.isArray(data)) {
+                            console.error('[BP enhancement] Inventory card returned an error instead of rows:', data);
+                            inventoryDataLoaded = true;
+                            resolve();
+                            return;
+                        }
 
                         data.forEach(row => {
                             const productId = String(row['Product ID']).trim();
@@ -701,8 +710,9 @@
         cpLoadingProductIds.add(productId);
 
         const params = JSON.stringify([{
+            id: COST_PRICE_PARAM_ID,
             type: 'number/=',
-            value: [String(productId)],
+            value: [Number(productId)],
             target: ['variable', ['template-tag', COST_PRICE_PRODUCT_ID_TEMPLATE_TAG]]
         }]);
         const url = `${METABASE_URL}/api/public/card/${COST_PRICE_CARD_UUID}/query/json?parameters=${encodeURIComponent(params)}`;
@@ -909,8 +919,9 @@
         const base = `${METABASE_URL}/api/public/card/${PO_QUESTION_UUID}/query/json`;
         if (PO_PRODUCT_ID_TEMPLATE_TAG && productId) {
             const params = JSON.stringify([{
+                id: PO_PARAM_ID,
                 type: 'number/=',
-                value: [String(productId)],
+                value: [Number(productId)],
                 target: ['variable', ['template-tag', PO_PRODUCT_ID_TEMPLATE_TAG]]
             }]);
             return `${base}?parameters=${encodeURIComponent(params)}`;
