@@ -1,29 +1,80 @@
 // ==UserScript==
 // @name         Brightpearl Bundle Stock and Inventory Enhancement + TR PO Tab
 // @namespace    http://tampermonkey.net/
-// @version      11.21
+// @version      12.0
 // @description  Bundle & inventory enhancements + TR Purchase Orders tab loaded from Metabase POs only when opened, showing coloured status chips and hiding PO tab when other tabs are selected. Now includes cost price breakdown per currency on the Prices tab.
 // @author       Erin Bond
 // @match        https://euw1.brightpearlapp.com/*
 // @updateURL    https://github.com/erinb-007/Tampermonkey/raw/refs/heads/main/Brightpearl%20Bundle%20Stock%20and%20Inventory%20Enhancement.user.js
 // @downloadURL  https://github.com/erinb-007/Tampermonkey/raw/refs/heads/main/Brightpearl%20Bundle%20Stock%20and%20Inventory%20Enhancement.user.js
 // @grant        GM_xmlhttpRequest
-// @connect      52.31.172.165
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @connect      *
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    const METABASE_URL = 'http://52.31.172.165:3000';
+    // ─── SETUP CODE ────────────────────────────────────────────────────────
+    // Server address and card links are NOT stored in this file. Each user
+    // pastes a setup code once (ask Erin); it is saved in their own
+    // Tampermonkey storage. Setup code = base64 of JSON:
+    //   {"u": serverUrl, "i": inventoryUuid, "p": poUuid, "c": costPriceUuid}
+    const CONFIG_KEY = 'bpEnhancementConfig';
 
-    // INVENTORY / BUNDLE CARD
-    const INVENTORY_CARD_UUID = '2627b450-000b-4e2e-96fa-cc07aee37f8c';
+    function loadConfig() {
+        try {
+            const raw = GM_getValue(CONFIG_KEY, null);
+            if (!raw) return null;
+            const cfg = JSON.parse(atob(raw.trim()));
+            if (cfg && cfg.u && cfg.i && cfg.p && cfg.c) return cfg;
+        } catch (e) { /* invalid code */ }
+        return null;
+    }
 
-    // PO QUESTION – "Tampermonkeyly PO Final"
-    const PO_QUESTION_UUID = 'fcd1f170-b73a-4537-8f8b-105e126c938b';
+    function promptForSetupCode() {
+        const code = window.prompt('Paste the Brightpearl script setup code (ask Erin if you don\'t have it):');
+        if (!code) return;
+        try {
+            const cfg = JSON.parse(atob(code.trim()));
+            if (!(cfg && cfg.u && cfg.i && cfg.p && cfg.c)) throw new Error('incomplete');
+            GM_setValue(CONFIG_KEY, code.trim());
+            window.location.reload();
+        } catch (e) {
+            window.alert('That setup code is not valid. Please check you copied all of it.');
+        }
+    }
 
-    // COST PRICE CARD — public Metabase question using bpproductprice table
-    const COST_PRICE_CARD_UUID = 'ffcefd81-7e86-4189-a6ca-e6e379c90469';
+    GM_registerMenuCommand('Enter setup code', promptForSetupCode);
+
+    const CONFIG = loadConfig();
+    if (!CONFIG) {
+        const showBanner = () => {
+            if (document.getElementById('bp-setup-banner') || !document.body) return;
+            const b = document.createElement('div');
+            b.id = 'bp-setup-banner';
+            b.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:99999;background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:10px 14px;border-radius:4px;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.2);';
+            b.innerHTML = 'Trak Racer Brightpearl script needs a setup code — message Erin. ';
+            const btn = document.createElement('a');
+            btn.href = '#';
+            btn.textContent = 'Enter code';
+            btn.style.cssText = 'font-weight:bold;color:#2c5aa0;margin-left:6px;';
+            btn.addEventListener('click', e => { e.preventDefault(); promptForSetupCode(); });
+            b.appendChild(btn);
+            document.body.appendChild(b);
+        };
+        if (/scode=product/.test(window.location.href)) {
+            if (document.body) showBanner(); else window.addEventListener('DOMContentLoaded', showBanner);
+        }
+        return;
+    }
+
+    const METABASE_URL         = CONFIG.u.replace(/\/+$/, '');
+    const INVENTORY_CARD_UUID  = CONFIG.i;
+    const PO_QUESTION_UUID     = CONFIG.p;
+    const COST_PRICE_CARD_UUID = CONFIG.c;
     const COST_PRICE_PRODUCT_ID_TEMPLATE_TAG = 'product_id';
     // Metabase public cards reject filters without the card's parameter id.
     // Find it in the card's "parameters" list if the card is ever rebuilt.
